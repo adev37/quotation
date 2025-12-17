@@ -1,10 +1,11 @@
-// src/services/inventoryApi.js
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
 
 export const inventoryApi = createApi({
   reducerPath: "inventoryApi",
   baseQuery: fetchBaseQuery({
-    baseUrl: "/api", // ✅ proxy → localhost:8000
+    baseUrl: BASE_URL,   // ✅ live backend in prod + dev (if env provided)
     prepareHeaders: (headers) => {
       const token = localStorage.getItem("token");
       if (token) headers.set("authorization", `Bearer ${token}`);
