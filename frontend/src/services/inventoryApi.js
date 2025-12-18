@@ -5,7 +5,7 @@ const BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "
 export const inventoryApi = createApi({
   reducerPath: "inventoryApi",
   baseQuery: fetchBaseQuery({
-    baseUrl: BASE_URL,   // ✅ live backend in prod + dev (if env provided)
+    baseUrl: BASE_URL,
     prepareHeaders: (headers) => {
       const token = localStorage.getItem("token");
       if (token) headers.set("authorization", `Bearer ${token}`);
@@ -111,8 +111,12 @@ export const inventoryApi = createApi({
     }),
 
     // ---------- LOCATIONS ----------
+    // ✅ FIX: support warehouse-wise racks
+    // useGetLocationsQuery() -> all racks
+    // useGetLocationsQuery(warehouseId) -> racks of that warehouse
     getLocations: builder.query({
-      query: () => "/locations",
+      query: (warehouseId) =>
+        warehouseId ? `/locations?warehouse=${encodeURIComponent(warehouseId)}` : "/locations",
       providesTags: (result) =>
         result
           ? [
@@ -148,12 +152,12 @@ export const inventoryApi = createApi({
       providesTags: [{ type: "CurrentStock", id: "SUMMARY" }],
     }),
 
-    // ✅ NEW: Rack Options for Stock Out dropdown (real locationId)
+    // ✅ Rack Options for Stock Out dropdown (only racks with available stock)
     getRackOptions: builder.query({
       query: ({ item, warehouse }) =>
-        `/current-stock/rack-options?item=${encodeURIComponent(
-          item
-        )}&warehouse=${encodeURIComponent(warehouse)}`,
+        `/current-stock/rack-options?item=${encodeURIComponent(item)}&warehouse=${encodeURIComponent(
+          warehouse
+        )}`,
       providesTags: [{ type: "CurrentStock", id: "LIST" }],
     }),
 
@@ -191,8 +195,7 @@ export const inventoryApi = createApi({
       ],
     }),
     getStockOutChallan: builder.query({
-      query: (stockOutNo) =>
-        `/stock-out/challan/${encodeURIComponent(stockOutNo)}`,
+      query: (stockOutNo) => `/stock-out/challan/${encodeURIComponent(stockOutNo)}`,
     }),
 
     // ---------- LEDGER ----------
@@ -262,6 +265,7 @@ export const {
   useUpdateWarehouseMutation,
   useDeleteWarehouseMutation,
 
+  // ✅ getLocations now accepts optional warehouseId
   useGetLocationsQuery,
   useAddLocationMutation,
   useUpdateLocationByNameMutation,
@@ -271,7 +275,6 @@ export const {
   useLazyGetCurrentStockQuery,
   useGetCurrentStockSummaryQuery,
 
-  // ✅ NEW hook export
   useLazyGetRackOptionsQuery,
 
   useListStockInQuery,

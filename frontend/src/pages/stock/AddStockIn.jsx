@@ -8,13 +8,14 @@ import {
 } from "../../services/inventoryApi";
 
 const AddStockIn = () => {
-  // RTK Query data
   const { data: itemsResult = [] } = useGetItemsQuery();
   const { data: allWarehouses = [] } = useGetWarehousesQuery();
+
+  // ✅ get all locations (or you can pass warehouseId if you changed API)
   const { data: allLocations = [] } = useGetLocationsQuery();
+
   const [createStockIn, { isLoading }] = useCreateStockInMutation();
 
-  // Normalize items whether API returns {items: []} or []
   const allItems = Array.isArray(itemsResult)
     ? itemsResult
     : Array.isArray(itemsResult.items)
@@ -33,6 +34,12 @@ const AddStockIn = () => {
   const handleItemChange = (idx, e) => {
     const updated = [...items];
     updated[idx][e.target.name] = e.target.value;
+
+    // ✅ if warehouse changed, reset rack selection
+    if (e.target.name === "warehouse") {
+      updated[idx].location = "";
+    }
+
     setItems(updated);
   };
 
@@ -51,7 +58,6 @@ const AddStockIn = () => {
             it.modelNo?.toLowerCase().includes(lower)
         )
       );
-      // Clear selected item id when user types
       handleItemChange(idx, { target: { name: "item", value: "" } });
     } else {
       setItemSuggestions([]);
@@ -68,10 +74,7 @@ const AddStockIn = () => {
   };
 
   const addItem = () => {
-    setItems([
-      ...items,
-      { item: "", warehouse: "", quantity: "", location: "" },
-    ]);
+    setItems([...items, { item: "", warehouse: "", quantity: "", location: "" }]);
     setItemSearch([...itemSearch, ""]);
   };
 
@@ -82,28 +85,25 @@ const AddStockIn = () => {
     }
   };
 
+  // ✅ Now this works because Location has warehouse field
   const getLocationsForWarehouse = (warehouseId) => {
     if (!warehouseId) return [];
     return (allLocations || []).filter((l) => {
-      const locWh =
-        typeof l.warehouse === "object" ? l.warehouse?._id : l.warehouse;
-      return locWh === warehouseId;
+      const locWh = typeof l.warehouse === "object" ? l.warehouse?._id : l.warehouse;
+      return String(locWh) === String(warehouseId);
     });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const cleanedItems = items.filter(
-      (i) => i.item && i.warehouse && i.quantity
-    );
+    const cleanedItems = items.filter((i) => i.item && i.warehouse && i.quantity);
 
     if (cleanedItems.length === 0) {
       toast.error("❌ No valid items to submit.");
       return;
     }
 
-    // prevent duplicates of same item+warehouse+location
     const seen = new Set();
     for (const i of cleanedItems) {
       const key = `${i.item}|${i.warehouse}|${i.location || "null"}`;
@@ -115,7 +115,16 @@ const AddStockIn = () => {
     }
 
     try {
-      await createStockIn({ items: cleanedItems, date, remarks }).unwrap();
+      await createStockIn({
+        items: cleanedItems.map((x) => ({
+          ...x,
+          location: x.location || null, // ✅ optional
+          quantity: Number(x.quantity),
+        })),
+        date,
+        remarks,
+      }).unwrap();
+
       toast.success("✅ Stock In recorded!");
       setItems([{ item: "", warehouse: "", quantity: "", location: "" }]);
       setItemSearch([""]);
@@ -129,9 +138,7 @@ const AddStockIn = () => {
   return (
     <div className="p-6">
       <ToastContainer position="top-right" autoClose={3000} />
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-        📥 Stock In
-      </h2>
+      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">📥 Stock In</h2>
 
       <form onSubmit={handleSubmit} className="bg-white shadow-md p-6 rounded-lg">
         {items.map((itm, idx) => (
@@ -180,9 +187,7 @@ const AddStockIn = () => {
               >
                 <option value="">Select Warehouse</option>
                 {(allWarehouses || []).map((w) => (
-                  <option key={w._id} value={w._id}>
-                    {w.name}
-                  </option>
+                  <option key={w._id} value={w._id}>{w.name}</option>
                 ))}
               </select>
             </div>
@@ -195,12 +200,11 @@ const AddStockIn = () => {
                 value={itm.location}
                 onChange={(e) => handleItemChange(idx, e)}
                 className="w-full border border-gray-300 rounded px-3 py-2"
+                disabled={!itm.warehouse}
               >
-                <option value="">Select Rack</option>
+                <option value="">{itm.warehouse ? "Select Rack" : "Select Warehouse first"}</option>
                 {getLocationsForWarehouse(itm.warehouse).map((l) => (
-                  <option key={l._id} value={l._id}>
-                    {l.name}
-                  </option>
+                  <option key={l._id} value={l._id}>{l.name}</option>
                 ))}
               </select>
             </div>
@@ -220,7 +224,6 @@ const AddStockIn = () => {
               />
             </div>
 
-            {/* Remove */}
             {items.length > 1 && (
               <div className="col-span-full text-right">
                 <button

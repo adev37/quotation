@@ -95,6 +95,7 @@ app.use((err, req, res, next) => {
 /**
  * ✅ Vercel serverless note:
  * - On Vercel, @vercel/node will handle the server.
+ * 
  * - For local dev, app.listen is needed.
  */
 if (!process.env.VERCEL) {

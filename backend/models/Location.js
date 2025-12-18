@@ -1,25 +1,33 @@
-// backend/models/Location.js
 import mongoose from "mongoose";
 
 const LocationSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    // optional: if you want rack unique per warehouse later, add:
-    // warehouse: { type: mongoose.Schema.Types.ObjectId, ref: "Warehouse", default: null },
+
+    // ✅ Each rack belongs to a warehouse
+    warehouse: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Warehouse",
+      required: true,
+      index: true,
+    },
+
+    description: { type: String, default: "", trim: true },
   },
   { timestamps: true }
 );
 
-// ✅ normalize for uniqueness (prevents duplicates like RACK-A1, rack-a1, " RACK-A1 ")
-LocationSchema.index(
-  { name: 1 },
-  { unique: true, collation: { locale: "en", strength: 2 } }
-);
-
+// ✅ normalize
 LocationSchema.pre("save", function (next) {
   if (this.name) this.name = this.name.trim();
   next();
 });
 
-const Location = mongoose.model("Location", LocationSchema);
-export default Location;
+// ✅ prevent duplicate rack names inside SAME warehouse (case-insensitive)
+LocationSchema.index(
+  { warehouse: 1, name: 1 },
+  { unique: true, collation: { locale: "en", strength: 2 } }
+);
+
+export default mongoose.models.Location ||
+  mongoose.model("Location", LocationSchema);

@@ -1,4 +1,3 @@
-// backend/routes/locationRoutes.js
 import express from "express";
 import verifyToken from "../middleware/verifyToken.js";
 import {
@@ -10,11 +9,12 @@ import {
 const router = express.Router();
 router.use(verifyToken);
 
-// dropdown
+// ✅ /api/locations?warehouse=<warehouseId>
 router.get("/", getLocations);
 
-// optional create/delete
+// ✅ create rack with warehouse
 router.post("/", createLocation);
+
 router.delete("/:id", deleteLocation);
 
 export default router;
