@@ -11,11 +11,9 @@ import {
 const AddStockIn = () => {
   const { data: itemsResult = [] } = useGetItemsQuery();
   const { data: allWarehouses = [] } = useGetWarehousesQuery();
-  const { data: locationsResult = [] } = useGetLocationsQuery();
-
+  const { data: locationsResult = [] } = useGetLocationsQuery(); // ✅ gets all locations
   const [createStockIn, { isLoading }] = useCreateStockInMutation();
 
-  // ✅ normalize items
   const allItems = useMemo(() => {
     return Array.isArray(itemsResult)
       ? itemsResult
@@ -24,7 +22,7 @@ const AddStockIn = () => {
       : [];
   }, [itemsResult]);
 
-  // ✅ normalize locations (this is the main fix)
+  // ✅ main fix: normalize locations safely
   const allLocations = useMemo(() => {
     return Array.isArray(locationsResult)
       ? locationsResult
@@ -46,10 +44,8 @@ const AddStockIn = () => {
     const updated = [...items];
     updated[idx][e.target.name] = e.target.value;
 
-    // ✅ reset rack when warehouse changes
-    if (e.target.name === "warehouse") {
-      updated[idx].location = "";
-    }
+    // ✅ when warehouse changes -> reset rack
+    if (e.target.name === "warehouse") updated[idx].location = "";
 
     setItems(updated);
   };
@@ -60,27 +56,28 @@ const AddStockIn = () => {
     setItemSearch(updatedSearch);
     setActiveSuggestionIdx(idx);
 
-    if (value.trim().length > 0) {
-      const lower = value.toLowerCase();
-      setItemSuggestions(
-        allItems.filter(
-          (it) =>
-            it.name?.toLowerCase().includes(lower) ||
-            it.modelNo?.toLowerCase().includes(lower)
-        )
-      );
-
-      // clear selected item id while typing
-      handleItemChange(idx, { target: { name: "item", value: "" } });
-    } else {
+    if (!value.trim()) {
       setItemSuggestions([]);
+      return;
     }
+
+    const q = value.toLowerCase();
+    setItemSuggestions(
+      allItems.filter(
+        (it) =>
+          it.name?.toLowerCase().includes(q) ||
+          it.modelNo?.toLowerCase().includes(q)
+      )
+    );
+
+    // clear selected id while typing
+    handleItemChange(idx, { target: { name: "item", value: "" } });
   };
 
-  const handleSelectSuggestion = (idx, suggestion) => {
-    handleItemChange(idx, { target: { name: "item", value: suggestion._id } });
+  const handleSelectSuggestion = (idx, s) => {
+    handleItemChange(idx, { target: { name: "item", value: s._id } });
     const updatedSearch = [...itemSearch];
-    updatedSearch[idx] = `${suggestion.name} (${suggestion.modelNo || "-"})`;
+    updatedSearch[idx] = `${s.name} (${s.modelNo || "-"})`;
     setItemSearch(updatedSearch);
     setItemSuggestions([]);
     setActiveSuggestionIdx(null);
@@ -92,21 +89,17 @@ const AddStockIn = () => {
   };
 
   const removeItem = (i) => {
-    if (items.length > 1) {
-      setItems((prev) => prev.filter((_, idx) => idx !== i));
-      setItemSearch((prev) => prev.filter((_, idx) => idx !== i));
-    }
+    if (items.length <= 1) return;
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setItemSearch((prev) => prev.filter((_, idx) => idx !== i));
   };
 
-  // ✅ Supports: l.warehouse OR l.warehouseId, object OR string
+  // ✅ works for: location.warehouse = ObjectId OR populated object
   const getLocationsForWarehouse = (warehouseId) => {
     if (!warehouseId) return [];
-
     return allLocations.filter((l) => {
-      const raw = l?.warehouse ?? l?.warehouseId; // ✅ both supported
-      const locWh =
-        typeof raw === "object" && raw !== null ? raw?._id : raw;
-
+      const raw = l?.warehouse ?? l?.warehouseId;
+      const locWh = typeof raw === "object" && raw !== null ? raw?._id : raw;
       return String(locWh) === String(warehouseId);
     });
   };
@@ -115,27 +108,21 @@ const AddStockIn = () => {
     e.preventDefault();
 
     const cleanedItems = items.filter((i) => i.item && i.warehouse && i.quantity);
+    if (cleanedItems.length === 0) return toast.error("❌ No valid items to submit.");
 
-    if (cleanedItems.length === 0) {
-      toast.error("❌ No valid items to submit.");
-      return;
-    }
-
-    // prevent duplicates
+    // prevent duplicates item+warehouse+location
     const seen = new Set();
     for (const i of cleanedItems) {
       const key = `${i.item}|${i.warehouse}|${i.location || "null"}`;
-      if (seen.has(key)) {
-        toast.error("❌ Duplicate item, warehouse & location entries found.");
-        return;
-      }
+      if (seen.has(key)) return toast.error("❌ Duplicate item, warehouse & location entries found.");
       seen.add(key);
     }
 
     try {
       await createStockIn({
         items: cleanedItems.map((x) => ({
-          ...x,
+          item: x.item,
+          warehouse: x.warehouse,
           location: x.location || null,
           quantity: Number(x.quantity),
         })),
@@ -167,7 +154,7 @@ const AddStockIn = () => {
               key={idx}
               className="grid [grid-template-columns:2fr_1fr_1fr_0.5fr] gap-4 border-b pb-4 mb-4 relative"
             >
-              {/* Item Autocomplete */}
+              {/* Item Search */}
               <div className="relative">
                 <label className="block mb-1">Search Item</label>
                 <input
@@ -179,21 +166,19 @@ const AddStockIn = () => {
                   required
                   autoComplete="off"
                 />
-                {itemSearch[idx] &&
-                  activeSuggestionIdx === idx &&
-                  itemSuggestions.length > 0 && (
-                    <ul className="absolute z-10 bg-white border rounded shadow w-full max-h-48 overflow-auto">
-                      {itemSuggestions.map((s) => (
-                        <li
-                          key={s._id}
-                          className="px-3 py-2 cursor-pointer hover:bg-blue-100"
-                          onClick={() => handleSelectSuggestion(idx, s)}
-                        >
-                          {s.name} ({s.modelNo || "-"})
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                {activeSuggestionIdx === idx && itemSuggestions.length > 0 && (
+                  <ul className="absolute z-10 bg-white border rounded shadow w-full max-h-48 overflow-auto">
+                    {itemSuggestions.map((s) => (
+                      <li
+                        key={s._id}
+                        className="px-3 py-2 cursor-pointer hover:bg-blue-100"
+                        onClick={() => handleSelectSuggestion(idx, s)}
+                      >
+                        {s.name} ({s.modelNo || "-"})
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {/* Warehouse */}
@@ -207,15 +192,13 @@ const AddStockIn = () => {
                   className="w-full border border-gray-300 rounded px-3 py-2"
                 >
                   <option value="">Select Warehouse</option>
-                  {(allWarehouses || []).map((w) => (
-                    <option key={w._id} value={w._id}>
-                      {w.name}
-                    </option>
+                  {allWarehouses.map((w) => (
+                    <option key={w._id} value={w._id}>{w.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Rack Location */}
+              {/* Rack */}
               <div>
                 <label className="block mb-1">Rack Location</label>
                 <select
@@ -230,41 +213,32 @@ const AddStockIn = () => {
                   </option>
 
                   {itm.warehouse && racks.length === 0 && (
-                    <option value="" disabled>
-                      No racks found for this warehouse
-                    </option>
+                    <option value="" disabled>No racks found for this warehouse</option>
                   )}
 
                   {racks.map((l) => (
-                    <option key={l._id} value={l._id}>
-                      {l.name}
-                    </option>
+                    <option key={l._id} value={l._id}>{l.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Quantity */}
+              {/* Qty */}
               <div>
                 <label className="block mb-1">Qty</label>
                 <input
                   name="quantity"
                   type="number"
+                  min={1}
                   value={itm.quantity}
                   onChange={(e) => handleItemChange(idx, e)}
-                  placeholder="Qty"
-                  required
-                  min={1}
                   className="w-full border border-gray-300 rounded px-2 py-2 text-center"
+                  required
                 />
               </div>
 
               {items.length > 1 && (
                 <div className="col-span-full text-right">
-                  <button
-                    type="button"
-                    onClick={() => removeItem(idx)}
-                    className="text-red-500 text-sm"
-                  >
+                  <button type="button" onClick={() => removeItem(idx)} className="text-red-500 text-sm">
                     Remove Item
                   </button>
                 </div>
@@ -273,11 +247,7 @@ const AddStockIn = () => {
           );
         })}
 
-        <button
-          type="button"
-          onClick={addItem}
-          className="bg-blue-500 text-white px-3 py-1 rounded mb-4"
-        >
+        <button type="button" onClick={addItem} className="bg-blue-500 text-white px-3 py-1 rounded mb-4">
           + Add Another Item
         </button>
 
@@ -285,22 +255,20 @@ const AddStockIn = () => {
           <div>
             <label className="block mb-1">Date</label>
             <input
-              name="date"
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              required
               className="w-full border border-gray-300 rounded px-3 py-2"
+              required
             />
           </div>
           <div>
             <label className="block mb-1">Remarks</label>
             <input
-              name="remarks"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Remarks"
               className="w-full border border-gray-300 rounded px-3 py-2"
+              placeholder="Remarks"
             />
           </div>
         </div>

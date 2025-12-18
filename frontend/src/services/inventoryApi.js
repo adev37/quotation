@@ -88,9 +88,10 @@ export const inventoryApi = createApi({
     }),
 
     // ---------- LOCATIONS ----------
-    // ✅ FIX: normalize response safely (supports [] OR {locations: []} OR {data: []})
+    // ✅ supports GET /locations OR /locations?warehouse=<id>
     getLocations: builder.query({
-      query: () => "/locations",
+      query: (warehouseId) =>
+        warehouseId ? `/locations?warehouse=${encodeURIComponent(warehouseId)}` : "/locations",
       providesTags: (result) => {
         const list = Array.isArray(result)
           ? result
@@ -109,6 +110,11 @@ export const inventoryApi = createApi({
       query: (body) => ({ url: "/locations", method: "POST", body }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
+    updateLocationById: builder.mutation({
+      query: ({ id, ...body }) => ({ url: `/locations/${id}`, method: "PUT", body }),
+      invalidatesTags: (r, e, { id }) => [{ type: "Locations", id }, { type: "Locations", id: "LIST" }],
+    }),
+    // ✅ keep your existing "Edit All" feature
     updateLocationByName: builder.mutation({
       query: ({ name, ...body }) => ({
         url: `/locations/by-name/${encodeURIComponent(name)}`,
@@ -119,6 +125,11 @@ export const inventoryApi = createApi({
     }),
     deleteLocation: builder.mutation({
       query: (id) => ({ url: `/locations/${id}`, method: "DELETE" }),
+      invalidatesTags: [{ type: "Locations", id: "LIST" }],
+    }),
+    // ✅ optional: "Delete All" by rack name
+    deleteLocationByName: builder.mutation({
+      query: (name) => ({ url: `/locations/by-name/${encodeURIComponent(name)}`, method: "DELETE" }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
 
@@ -243,8 +254,10 @@ export const {
 
   useGetLocationsQuery,
   useAddLocationMutation,
+  useUpdateLocationByIdMutation,
   useUpdateLocationByNameMutation,
   useDeleteLocationMutation,
+  useDeleteLocationByNameMutation,
 
   useGetCurrentStockQuery,
   useLazyGetCurrentStockQuery,
