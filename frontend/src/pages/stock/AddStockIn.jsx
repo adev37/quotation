@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import {
   useGetItemsQuery,
   useGetWarehousesQuery,
@@ -10,21 +11,31 @@ import {
 const AddStockIn = () => {
   const { data: itemsResult = [] } = useGetItemsQuery();
   const { data: allWarehouses = [] } = useGetWarehousesQuery();
-
-  // ✅ get all locations (or you can pass warehouseId if you changed API)
-  const { data: allLocations = [] } = useGetLocationsQuery();
+  const { data: locationsResult = [] } = useGetLocationsQuery();
 
   const [createStockIn, { isLoading }] = useCreateStockInMutation();
 
-  const allItems = Array.isArray(itemsResult)
-    ? itemsResult
-    : Array.isArray(itemsResult.items)
-    ? itemsResult.items
-    : [];
+  // ✅ normalize items
+  const allItems = useMemo(() => {
+    return Array.isArray(itemsResult)
+      ? itemsResult
+      : Array.isArray(itemsResult?.items)
+      ? itemsResult.items
+      : [];
+  }, [itemsResult]);
 
-  const [items, setItems] = useState([
-    { item: "", warehouse: "", quantity: "", location: "" },
-  ]);
+  // ✅ normalize locations (this is the main fix)
+  const allLocations = useMemo(() => {
+    return Array.isArray(locationsResult)
+      ? locationsResult
+      : Array.isArray(locationsResult?.locations)
+      ? locationsResult.locations
+      : Array.isArray(locationsResult?.data)
+      ? locationsResult.data
+      : [];
+  }, [locationsResult]);
+
+  const [items, setItems] = useState([{ item: "", warehouse: "", quantity: "", location: "" }]);
   const [itemSearch, setItemSearch] = useState([""]);
   const [itemSuggestions, setItemSuggestions] = useState([]);
   const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(null);
@@ -35,7 +46,7 @@ const AddStockIn = () => {
     const updated = [...items];
     updated[idx][e.target.name] = e.target.value;
 
-    // ✅ if warehouse changed, reset rack selection
+    // ✅ reset rack when warehouse changes
     if (e.target.name === "warehouse") {
       updated[idx].location = "";
     }
@@ -58,6 +69,8 @@ const AddStockIn = () => {
             it.modelNo?.toLowerCase().includes(lower)
         )
       );
+
+      // clear selected item id while typing
       handleItemChange(idx, { target: { name: "item", value: "" } });
     } else {
       setItemSuggestions([]);
@@ -67,29 +80,33 @@ const AddStockIn = () => {
   const handleSelectSuggestion = (idx, suggestion) => {
     handleItemChange(idx, { target: { name: "item", value: suggestion._id } });
     const updatedSearch = [...itemSearch];
-    updatedSearch[idx] = `${suggestion.name} (${suggestion.modelNo})`;
+    updatedSearch[idx] = `${suggestion.name} (${suggestion.modelNo || "-"})`;
     setItemSearch(updatedSearch);
     setItemSuggestions([]);
     setActiveSuggestionIdx(null);
   };
 
   const addItem = () => {
-    setItems([...items, { item: "", warehouse: "", quantity: "", location: "" }]);
-    setItemSearch([...itemSearch, ""]);
+    setItems((prev) => [...prev, { item: "", warehouse: "", quantity: "", location: "" }]);
+    setItemSearch((prev) => [...prev, ""]);
   };
 
   const removeItem = (i) => {
     if (items.length > 1) {
-      setItems(items.filter((_, idx) => idx !== i));
-      setItemSearch(itemSearch.filter((_, idx) => idx !== i));
+      setItems((prev) => prev.filter((_, idx) => idx !== i));
+      setItemSearch((prev) => prev.filter((_, idx) => idx !== i));
     }
   };
 
-  // ✅ Now this works because Location has warehouse field
+  // ✅ Supports: l.warehouse OR l.warehouseId, object OR string
   const getLocationsForWarehouse = (warehouseId) => {
     if (!warehouseId) return [];
-    return (allLocations || []).filter((l) => {
-      const locWh = typeof l.warehouse === "object" ? l.warehouse?._id : l.warehouse;
+
+    return allLocations.filter((l) => {
+      const raw = l?.warehouse ?? l?.warehouseId; // ✅ both supported
+      const locWh =
+        typeof raw === "object" && raw !== null ? raw?._id : raw;
+
       return String(locWh) === String(warehouseId);
     });
   };
@@ -104,6 +121,7 @@ const AddStockIn = () => {
       return;
     }
 
+    // prevent duplicates
     const seen = new Set();
     for (const i of cleanedItems) {
       const key = `${i.item}|${i.warehouse}|${i.location || "null"}`;
@@ -118,7 +136,7 @@ const AddStockIn = () => {
       await createStockIn({
         items: cleanedItems.map((x) => ({
           ...x,
-          location: x.location || null, // ✅ optional
+          location: x.location || null,
           quantity: Number(x.quantity),
         })),
         date,
@@ -141,102 +159,119 @@ const AddStockIn = () => {
       <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">📥 Stock In</h2>
 
       <form onSubmit={handleSubmit} className="bg-white shadow-md p-6 rounded-lg">
-        {items.map((itm, idx) => (
-          <div
-            key={idx}
-            className="grid [grid-template-columns:2fr_1fr_1fr_0.5fr] gap-4 border-b pb-4 mb-4 relative"
-          >
-            {/* Item Autocomplete */}
-            <div className="relative">
-              <label className="block mb-1">Search Item</label>
-              <input
-                type="text"
-                value={itemSearch[idx] || ""}
-                onChange={(e) => handleItemSearch(idx, e.target.value)}
-                placeholder="Type to search item"
-                className="w-full border border-gray-300 rounded px-3 py-2"
-                required
-                autoComplete="off"
-              />
-              {itemSearch[idx] &&
-                activeSuggestionIdx === idx &&
-                itemSuggestions.length > 0 && (
-                  <ul className="absolute z-10 bg-white border rounded shadow w-full max-h-48 overflow-auto">
-                    {itemSuggestions.map((s) => (
-                      <li
-                        key={s._id}
-                        className="px-3 py-2 cursor-pointer hover:bg-blue-100"
-                        onClick={() => handleSelectSuggestion(idx, s)}
-                      >
-                        {s.name} ({s.modelNo})
-                      </li>
-                    ))}
-                  </ul>
-                )}
-            </div>
+        {items.map((itm, idx) => {
+          const racks = getLocationsForWarehouse(itm.warehouse);
 
-            {/* Warehouse */}
-            <div>
-              <label className="block mb-1">Warehouse</label>
-              <select
-                name="warehouse"
-                value={itm.warehouse}
-                onChange={(e) => handleItemChange(idx, e)}
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2"
-              >
-                <option value="">Select Warehouse</option>
-                {(allWarehouses || []).map((w) => (
-                  <option key={w._id} value={w._id}>{w.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Location */}
-            <div>
-              <label className="block mb-1">Rack Location</label>
-              <select
-                name="location"
-                value={itm.location}
-                onChange={(e) => handleItemChange(idx, e)}
-                className="w-full border border-gray-300 rounded px-3 py-2"
-                disabled={!itm.warehouse}
-              >
-                <option value="">{itm.warehouse ? "Select Rack" : "Select Warehouse first"}</option>
-                {getLocationsForWarehouse(itm.warehouse).map((l) => (
-                  <option key={l._id} value={l._id}>{l.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Quantity */}
-            <div>
-              <label className="block mb-1">Qty</label>
-              <input
-                name="quantity"
-                type="number"
-                value={itm.quantity}
-                onChange={(e) => handleItemChange(idx, e)}
-                placeholder="Qty"
-                required
-                min={1}
-                className="w-full border border-gray-300 rounded px-2 py-2 text-center"
-              />
-            </div>
-
-            {items.length > 1 && (
-              <div className="col-span-full text-right">
-                <button
-                  type="button"
-                  onClick={() => removeItem(idx)}
-                  className="text-red-500 text-sm"
-                >
-                  Remove Item
-                </button>
+          return (
+            <div
+              key={idx}
+              className="grid [grid-template-columns:2fr_1fr_1fr_0.5fr] gap-4 border-b pb-4 mb-4 relative"
+            >
+              {/* Item Autocomplete */}
+              <div className="relative">
+                <label className="block mb-1">Search Item</label>
+                <input
+                  type="text"
+                  value={itemSearch[idx] || ""}
+                  onChange={(e) => handleItemSearch(idx, e.target.value)}
+                  placeholder="Type to search item"
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  required
+                  autoComplete="off"
+                />
+                {itemSearch[idx] &&
+                  activeSuggestionIdx === idx &&
+                  itemSuggestions.length > 0 && (
+                    <ul className="absolute z-10 bg-white border rounded shadow w-full max-h-48 overflow-auto">
+                      {itemSuggestions.map((s) => (
+                        <li
+                          key={s._id}
+                          className="px-3 py-2 cursor-pointer hover:bg-blue-100"
+                          onClick={() => handleSelectSuggestion(idx, s)}
+                        >
+                          {s.name} ({s.modelNo || "-"})
+                        </li>
+                      ))}
+                    </ul>
+                  )}
               </div>
-            )}
-          </div>
-        ))}
+
+              {/* Warehouse */}
+              <div>
+                <label className="block mb-1">Warehouse</label>
+                <select
+                  name="warehouse"
+                  value={itm.warehouse}
+                  onChange={(e) => handleItemChange(idx, e)}
+                  required
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                >
+                  <option value="">Select Warehouse</option>
+                  {(allWarehouses || []).map((w) => (
+                    <option key={w._id} value={w._id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Rack Location */}
+              <div>
+                <label className="block mb-1">Rack Location</label>
+                <select
+                  name="location"
+                  value={itm.location}
+                  onChange={(e) => handleItemChange(idx, e)}
+                  className="w-full border border-gray-300 rounded px-3 py-2"
+                  disabled={!itm.warehouse}
+                >
+                  <option value="">
+                    {!itm.warehouse ? "Select Warehouse first" : "Select Rack"}
+                  </option>
+
+                  {itm.warehouse && racks.length === 0 && (
+                    <option value="" disabled>
+                      No racks found for this warehouse
+                    </option>
+                  )}
+
+                  {racks.map((l) => (
+                    <option key={l._id} value={l._id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block mb-1">Qty</label>
+                <input
+                  name="quantity"
+                  type="number"
+                  value={itm.quantity}
+                  onChange={(e) => handleItemChange(idx, e)}
+                  placeholder="Qty"
+                  required
+                  min={1}
+                  className="w-full border border-gray-300 rounded px-2 py-2 text-center"
+                />
+              </div>
+
+              {items.length > 1 && (
+                <div className="col-span-full text-right">
+                  <button
+                    type="button"
+                    onClick={() => removeItem(idx)}
+                    className="text-red-500 text-sm"
+                  >
+                    Remove Item
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         <button
           type="button"

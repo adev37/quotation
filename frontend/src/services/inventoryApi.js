@@ -41,26 +41,16 @@ export const inventoryApi = createApi({
       providesTags: (result) => {
         const list = Array.isArray(result) ? result : result?.items || [];
         return list.length
-          ? [
-              ...list.map((i) => ({ type: "Items", id: i._id })),
-              { type: "Items", id: "LIST" },
-            ]
+          ? [...list.map((i) => ({ type: "Items", id: i._id })), { type: "Items", id: "LIST" }]
           : [{ type: "Items", id: "LIST" }];
       },
     }),
     addItem: builder.mutation({
       query: (body) => ({ url: "/items", method: "POST", body }),
-      invalidatesTags: [
-        { type: "Items", id: "LIST" },
-        { type: "CurrentStock", id: "SUMMARY" },
-      ],
+      invalidatesTags: [{ type: "Items", id: "LIST" }, { type: "CurrentStock", id: "SUMMARY" }],
     }),
     updateItem: builder.mutation({
-      query: ({ id, ...body }) => ({
-        url: `/items/${id}`,
-        method: "PUT",
-        body,
-      }),
+      query: ({ id, ...body }) => ({ url: `/items/${id}`, method: "PUT", body }),
       invalidatesTags: (r, e, { id }) => [
         { type: "Items", id },
         { type: "Items", id: "LIST" },
@@ -81,10 +71,7 @@ export const inventoryApi = createApi({
       query: () => "/warehouses",
       providesTags: (result) =>
         result
-          ? [
-              ...result.map((w) => ({ type: "Warehouses", id: w._id })),
-              { type: "Warehouses", id: "LIST" },
-            ]
+          ? [...result.map((w) => ({ type: "Warehouses", id: w._id })), { type: "Warehouses", id: "LIST" }]
           : [{ type: "Warehouses", id: "LIST" }],
     }),
     addWarehouse: builder.mutation({
@@ -92,38 +79,31 @@ export const inventoryApi = createApi({
       invalidatesTags: [{ type: "Warehouses", id: "LIST" }],
     }),
     updateWarehouse: builder.mutation({
-      query: ({ id, ...body }) => ({
-        url: `/warehouses/${id}`,
-        method: "PUT",
-        body,
-      }),
-      invalidatesTags: (r, e, { id }) => [
-        { type: "Warehouses", id },
-        { type: "Warehouses", id: "LIST" },
-      ],
+      query: ({ id, ...body }) => ({ url: `/warehouses/${id}`, method: "PUT", body }),
+      invalidatesTags: (r, e, { id }) => [{ type: "Warehouses", id }, { type: "Warehouses", id: "LIST" }],
     }),
     deleteWarehouse: builder.mutation({
       query: (id) => ({ url: `/warehouses/${id}`, method: "DELETE" }),
-      invalidatesTags: (r, e, id) => [
-        { type: "Warehouses", id },
-        { type: "Warehouses", id: "LIST" },
-      ],
+      invalidatesTags: (r, e, id) => [{ type: "Warehouses", id }, { type: "Warehouses", id: "LIST" }],
     }),
 
     // ---------- LOCATIONS ----------
-    // ✅ FIX: support warehouse-wise racks
-    // useGetLocationsQuery() -> all racks
-    // useGetLocationsQuery(warehouseId) -> racks of that warehouse
+    // ✅ FIX: normalize response safely (supports [] OR {locations: []} OR {data: []})
     getLocations: builder.query({
-      query: (warehouseId) =>
-        warehouseId ? `/locations?warehouse=${encodeURIComponent(warehouseId)}` : "/locations",
-      providesTags: (result) =>
-        result
-          ? [
-              ...result.map((l) => ({ type: "Locations", id: l._id })),
-              { type: "Locations", id: "LIST" },
-            ]
-          : [{ type: "Locations", id: "LIST" }],
+      query: () => "/locations",
+      providesTags: (result) => {
+        const list = Array.isArray(result)
+          ? result
+          : Array.isArray(result?.locations)
+          ? result.locations
+          : Array.isArray(result?.data)
+          ? result.data
+          : [];
+
+        return list.length
+          ? [...list.map((l) => ({ type: "Locations", id: l._id })), { type: "Locations", id: "LIST" }]
+          : [{ type: "Locations", id: "LIST" }];
+      },
     }),
     addLocation: builder.mutation({
       query: (body) => ({ url: "/locations", method: "POST", body }),
@@ -151,13 +131,9 @@ export const inventoryApi = createApi({
       query: () => "/current-stock/summary",
       providesTags: [{ type: "CurrentStock", id: "SUMMARY" }],
     }),
-
-    // ✅ Rack Options for Stock Out dropdown (only racks with available stock)
     getRackOptions: builder.query({
       query: ({ item, warehouse }) =>
-        `/current-stock/rack-options?item=${encodeURIComponent(item)}&warehouse=${encodeURIComponent(
-          warehouse
-        )}`,
+        `/current-stock/rack-options?item=${encodeURIComponent(item)}&warehouse=${encodeURIComponent(warehouse)}`,
       providesTags: [{ type: "CurrentStock", id: "LIST" }],
     }),
 
@@ -265,7 +241,6 @@ export const {
   useUpdateWarehouseMutation,
   useDeleteWarehouseMutation,
 
-  // ✅ getLocations now accepts optional warehouseId
   useGetLocationsQuery,
   useAddLocationMutation,
   useUpdateLocationByNameMutation,
