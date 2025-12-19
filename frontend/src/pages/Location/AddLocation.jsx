@@ -33,52 +33,75 @@ const AddLocation = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="w-full">
       <ToastContainer position="top-right" autoClose={3000} />
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-        🗂️ Add Rack Location
-      </h2>
 
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white shadow-md p-6 rounded-lg max-w-3xl"
-      >
-        <div className="mb-4">
-          <label className="block mb-1 font-medium">Location Name</label>
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-            placeholder="e.g., Rack No-5"
-            required
-          />
-          <p className="text-sm text-gray-500 mt-1">
-            This rack will be created automatically in <b>all warehouses</b>.
-          </p>
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="mx-auto w-full max-w-[900px]">
+          <div className="bg-white rounded-2xl border shadow-sm p-4 sm:p-6">
+            <div className="mb-4">
+              <h2 className="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2">
+                🗂️ Add Rack Location
+              </h2>
+              <p className="text-sm text-slate-500">
+                This rack will be created automatically in{" "}
+                <span className="font-semibold text-slate-900">all warehouses</span>.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
+              <Field label="Location Name" hint="e.g., Rack No-5">
+                <input
+                  name="name"
+                  value={form.name}
+                  onChange={handleChange}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="e.g., Rack No-5"
+                  required
+                />
+              </Field>
+
+              <Field label="Description (Optional)" hint="Any extra details">
+                <input
+                  name="description"
+                  value={form.description}
+                  onChange={handleChange}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  placeholder="Optional details"
+                />
+              </Field>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className={`w-full rounded-lg py-2.5 text-sm font-semibold text-white transition ${
+                  isLoading
+                    ? "bg-slate-400 cursor-wait"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {isLoading ? "Saving..." : "➕ Add Location"}
+              </button>
+            </form>
+
+            <p className="mt-3 text-xs text-slate-500">
+              Fully responsive: clean on mobile/tablet/desktop.
+            </p>
+          </div>
         </div>
-
-        <div className="mb-4">
-          <label className="block mb-1 font-medium">Description</label>
-          <input
-            name="description"
-            value={form.description}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-            placeholder="Optional details"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-semibold disabled:opacity-70"
-        >
-          {isLoading ? "Saving..." : "➕ Add Location"}
-        </button>
-      </form>
+      </div>
     </div>
   );
 };
 
 export default AddLocation;
+
+const Field = ({ label, hint, children }) => (
+  <div className="min-w-0">
+    <label className="block mb-1 text-xs sm:text-sm font-medium text-slate-700">
+      {label}
+    </label>
+    {children}
+    {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
+  </div>
+);

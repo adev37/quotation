@@ -1,36 +1,24 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
+import { ChevronDown } from "lucide-react";
 
-const SidebarDropdown = ({ icon, title, children }) => {
+export default function SidebarDropdown({ icon, title, children }) {
   const [open, setOpen] = useState(false);
-  const timeoutRef = useRef(null);
-
-  const handleMouseEnter = () => {
-    clearTimeout(timeoutRef.current);
-    setOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => setOpen(false), 50);
-  };
 
   return (
-    <div
-      className="relative inline-block"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}>
-      <div className="cursor-pointer px-4 py-2 flex items-center rounded hover:bg-blue-100">
-        <span className="mr-2">{icon}</span>
-        <span>{title}</span>
-        <span className="ml-auto">▸</span>
-      </div>
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition"
+      >
+        {icon}
+        <span className="truncate">{title}</span>
+        <ChevronDown
+          className={`ml-auto h-4 w-4 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
 
-      {open && (
-        <div className="absolute left-full top-0 ml-1 w-56 bg-white border rounded shadow-lg z-50">
-          {children}
-        </div>
-      )}
+      {open && <div className="pl-2 space-y-1">{children}</div>}
     </div>
   );
-};
-
-export default SidebarDropdown;
+}

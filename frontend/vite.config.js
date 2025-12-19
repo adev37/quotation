@@ -10,7 +10,7 @@ export default defineConfig({
 
     proxy: {
       "/api": {
-        target: "http://localhost:8000", // ✅ LOCAL backend
+        target: "https://inventory-apis-khaki.vercel.app", // ✅ LOCAL backend
         changeOrigin: true,
         secure: false,
       },

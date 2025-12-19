@@ -1,11 +1,11 @@
-// src/pages/demo/ViewDemoReturns.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { useGetDemoReturnReportQuery } from "../../services/inventoryApi";
 
 const ViewDemoReturns = () => {
-  const { data: report = [], isLoading } = useGetDemoReturnReportQuery();
+  const { data: report = [], isLoading, isError, error } =
+    useGetDemoReturnReportQuery();
 
   const [statusFilter, setStatusFilter] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -13,16 +13,6 @@ const ViewDemoReturns = () => {
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-
-  // sort newest first (by returnedOn if returned else by returnDate/createdAt)
-  const sortedEntries = useMemo(() => {
-    const arr = Array.isArray(report) ? [...report] : [];
-    return arr.sort((a, b) => {
-      const dA = new Date(a.returned ? a.returnedOn : (a.returnDate || a.createdAt));
-      const dB = new Date(b.returned ? b.returnedOn : (b.returnDate || b.createdAt));
-      return dB - dA;
-    });
-  }, [report]);
 
   const formatDate = (date) => {
     try {
@@ -33,6 +23,16 @@ const ViewDemoReturns = () => {
       return "-";
     }
   };
+
+  // sort newest first
+  const sortedEntries = useMemo(() => {
+    const arr = Array.isArray(report) ? [...report] : [];
+    return arr.sort((a, b) => {
+      const dA = new Date(a.returned ? a.returnedOn : a.returnDate || a.createdAt);
+      const dB = new Date(b.returned ? b.returnedOn : b.returnDate || b.createdAt);
+      return dB - dA;
+    });
+  }, [report]);
 
   // filters
   const filteredEntries = useMemo(() => {
@@ -73,159 +73,227 @@ const ViewDemoReturns = () => {
       "Sl#": idx + 1,
       Item: entry.itemName || "-",
       "Model No.": entry.modelNo || "-",
-      "Total Qty": entry.quantity,
-      "Returned Qty": entry.returnedQty,
+      "Total Qty": entry.quantity ?? 0,
+      "Returned Qty": entry.returnedQty ?? 0,
       "Expected Return": formatDate(entry.returnDate),
       "Returned On": entry.returned ? formatDate(entry.returnedOn) : "-",
       Status: entry.returned ? "Returned" : "Pending",
     }));
+
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Demo Returns Report");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(
-      new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      new Blob([buf], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
       "Demo_Returns_Report.xlsx"
     );
   };
 
   // pagination
-  const indexOfLast = currentPage * itemsPerPage;
+  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage) || 1;
+  const safePage = Math.min(Math.max(currentPage, 1), totalPages);
+  const indexOfLast = safePage * itemsPerPage;
   const indexOfFirst = indexOfLast - itemsPerPage;
   const currentItems = filteredEntries.slice(indexOfFirst, indexOfLast);
-  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
+
+  const resetFilters = () => {
+    setStatusFilter("");
+    setSearchText("");
+    setDateFrom("");
+    setDateTo("");
+    setCurrentPage(1);
+  };
 
   return (
-    <div className="p-6 min-h-screen relative pb-24">
-      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
-        Demo Returns Report
-      </h2>
+    <div className="w-full">
+      <div className="p-3 sm:p-4 md:p-6">
+        <div className="mx-auto w-full max-w-[1200px]">
+          <div className="bg-white rounded-2xl border shadow-sm p-4 sm:p-5">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+              <div>
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 bg-blue-500 rounded-full" />
+                  Demo Returns Report
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Filter by item/model, status and expected return date.
+                </p>
+              </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-4 mb-4 items-center">
-        <input
-          type="text"
-          placeholder="🔎 Search Item / Model"
-          className="border px-3 py-2 rounded w-52"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="border px-3 py-2 rounded w-40"
-        >
-          <option value="">📌 All Status</option>
-          <option value="Returned">Returned</option>
-          <option value="Pending">Pending</option>
-        </select>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={resetFilters}
+                  className="px-3 py-2 rounded-lg border text-sm hover:bg-slate-50"
+                >
+                  🔄 Reset
+                </button>
+                <button
+                  onClick={exportToExcel}
+                  className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium"
+                >
+                  📄 Export
+                </button>
+              </div>
+            </div>
 
-        <label className="ml-2">Expected Return:</label>
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          className="border px-2 py-1 rounded"
-        />
-        <span>to</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          className="border px-2 py-1 rounded"
-        />
+            {/* Filters */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <input
+                type="text"
+                placeholder="🔎 Search Item / Model"
+                className="border rounded-lg px-3 py-2 text-sm w-full"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+              />
 
-        <button
-          onClick={() => { setStatusFilter(""); setSearchText(""); setDateFrom(""); setDateTo(""); setCurrentPage(1); }}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          🔄 Reset
-        </button>
-        <button
-          onClick={exportToExcel}
-          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
-        >
-          📄 Export to Excel
-        </button>
-      </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm w-full"
+              >
+                <option value="">📌 All Status</option>
+                <option value="Returned">Returned</option>
+                <option value="Pending">Pending</option>
+              </select>
 
-      {/* Table */}
-      <div className="overflow-x-auto shadow rounded bg-white min-h-[400px]">
-        {isLoading ? (
-          <p className="p-6 text-blue-600">Loading demo returns...</p>
-        ) : currentItems.length === 0 ? (
-          <p className="p-6 text-gray-500">No demo return records found.</p>
-        ) : (
-          <table className="w-full table-auto border border-gray-300 text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="p-2 border">Sl#</th>
-                <th className="p-2 border">Item</th>
-                <th className="p-2 border">Model No.</th>
-                <th className="p-2 border">Total Qty</th>
-                <th className="p-2 border">Returned Qty</th>
-                <th className="p-2 border">Expected Return</th>
-                <th className="p-2 border">Returned On</th>
-                <th className="p-2 border">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentItems.map((entry, idx) => (
-                <tr key={entry._id || idx} className="border-t hover:bg-gray-50">
-                  <td className="p-2 border text-center">{indexOfFirst + idx + 1}</td>
-                  <td className="p-2 border text-center">{entry.itemName}</td>
-                  <td className="p-2 border text-center">{entry.modelNo}</td>
-                  <td className="p-2 border text-center">{entry.quantity}</td>
-                  <td className="p-2 border text-center">{entry.returnedQty}</td>
-                  <td className="p-2 border text-center">{formatDate(entry.returnDate)}</td>
-                  <td className="p-2 border text-center">
-                    {entry.returned ? formatDate(entry.returnedOn) : "-"}
-                  </td>
-                  <td className="p-2 border text-center">
-                    <span
-                      className={`font-semibold px-2 py-1 rounded ${
-                        entry.returned ? "text-green-700 bg-green-100" : "text-red-700 bg-red-100"
+              <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+                <span className="text-xs text-slate-500 whitespace-nowrap">
+                  From
+                </span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="text-sm w-full outline-none bg-transparent"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 border rounded-lg px-3 py-2">
+                <span className="text-xs text-slate-500 whitespace-nowrap">
+                  To
+                </span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="text-sm w-full outline-none bg-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="mt-4">
+              {isLoading ? (
+                <div className="text-blue-600 text-sm">Loading demo returns…</div>
+              ) : isError ? (
+                <div className="text-red-600 text-sm">
+                  Failed to load. {error?.data?.message || ""}
+                </div>
+              ) : currentItems.length === 0 ? (
+                <div className="text-slate-500 text-sm">
+                  No demo return records found.
+                </div>
+              ) : (
+                <div className="w-full overflow-x-auto rounded-xl border">
+                  <table className="min-w-[950px] w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-700 font-semibold">
+                      <tr>
+                        <th className="p-3 text-left whitespace-nowrap">Sl#</th>
+                        <th className="p-3 text-left whitespace-nowrap">Item</th>
+                        <th className="p-3 text-left whitespace-nowrap">Model No.</th>
+                        <th className="p-3 text-right whitespace-nowrap">Total Qty</th>
+                        <th className="p-3 text-right whitespace-nowrap">Returned Qty</th>
+                        <th className="p-3 text-left whitespace-nowrap">Expected Return</th>
+                        <th className="p-3 text-left whitespace-nowrap">Returned On</th>
+                        <th className="p-3 text-center whitespace-nowrap">Status</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {currentItems.map((entry, idx) => (
+                        <tr
+                          key={entry._id || idx}
+                          className="border-t hover:bg-slate-50"
+                        >
+                          <td className="p-3">
+                            {indexOfFirst + idx + 1}
+                          </td>
+                          <td className="p-3">{entry.itemName || "-"}</td>
+                          <td className="p-3">{entry.modelNo || "-"}</td>
+                          <td className="p-3 text-right">{entry.quantity ?? 0}</td>
+                          <td className="p-3 text-right">{entry.returnedQty ?? 0}</td>
+                          <td className="p-3">{formatDate(entry.returnDate)}</td>
+                          <td className="p-3">
+                            {entry.returned ? formatDate(entry.returnedOn) : "-"}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span
+                              className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${
+                                entry.returned
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-rose-100 text-rose-700"
+                              }`}
+                            >
+                              {entry.returned ? "Returned" : "Pending"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Pagination (sticky, responsive) */}
+            {filteredEntries.length > 0 && totalPages > 1 && (
+              <div className="mt-5 sticky bottom-0 z-10 bg-white/90 backdrop-blur border rounded-xl p-2 sm:p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-xs text-slate-600">
+                    Page{" "}
+                    <span className="font-semibold text-slate-900">{safePage}</span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-slate-900">{totalPages}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                    <button
+                      disabled={safePage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      className={`px-3 py-1.5 rounded-lg text-sm ${
+                        safePage === 1
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
                       }`}
                     >
-                      {entry.returned ? "Returned" : "Pending"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      ◀ Prev
+                    </button>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2 z-50 bg-white px-4 py-2 shadow rounded">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            className={`px-3 py-1 rounded ${currentPage === 1 ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-blue-500 text-white"}`}
-          >
-            ◀️ Prev
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => (
-            <button
-              key={i}
-              onClick={() => setCurrentPage(i + 1)}
-              className={`px-3 py-1 rounded ${currentPage === i + 1 ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
-            >
-              {i + 1}
-            </button>
-          ))}
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            className={`px-3 py-1 rounded ${currentPage === totalPages ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-blue-500 text-white"}`}
-          >
-            Next ▶️
-          </button>
+                    <button
+                      disabled={safePage === totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      className={`px-3 py-1.5 rounded-lg text-sm ${
+                        safePage === totalPages
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
+                      }`}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-3 text-xs text-slate-500">
+              Mobile tip: Filters auto-wrap. Table is scrollable horizontally.
+            </p>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
