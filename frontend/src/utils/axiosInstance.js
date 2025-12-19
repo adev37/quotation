@@ -9,7 +9,7 @@ const onVercelUI =
 
 const BASE_URL =
   fromEnv ||
-  (onVercelUI ? "https://inventory-apis-khaki.vercel.app/api" : "/api");
+  (onVercelUI ? "http://localhost:8000/api" : "/api");
 
 const API = axios.create({ baseURL: BASE_URL });
 

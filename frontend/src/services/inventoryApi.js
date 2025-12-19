@@ -1,6 +1,13 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/+$/, "");
+// ✅ Base URL Strategy:
+// - Production: set VITE_API_BASE_URL="https://your-backend.com/api"
+// - Local Dev: leave empty + use Vite proxy -> "/api"
+const normalizeBase = (url) => String(url || "").trim().replace(/\/+$/, "");
+const ensureApiSuffix = (url) => (url && !/\/api$/i.test(url) ? `${url}/api` : url);
+
+const RAW_ENV = normalizeBase(import.meta.env.VITE_API_BASE_URL);
+const BASE_URL = RAW_ENV ? ensureApiSuffix(RAW_ENV) : "/api";
 
 export const inventoryApi = createApi({
   reducerPath: "inventoryApi",
@@ -88,7 +95,7 @@ export const inventoryApi = createApi({
     }),
 
     // ---------- LOCATIONS ----------
-    // ✅ supports GET /locations OR /locations?warehouse=<id>
+    // ✅ Old (flat list) - keep if your app still uses it somewhere
     getLocations: builder.query({
       query: (warehouseId) =>
         warehouseId ? `/locations?warehouse=${encodeURIComponent(warehouseId)}` : "/locations",
@@ -106,15 +113,40 @@ export const inventoryApi = createApi({
           : [{ type: "Locations", id: "LIST" }];
       },
     }),
+
+    // ✅ NEW: Grouped locations (server-side pagination + search)
+    // Expected response shape example:
+    // { data: [...], page: 1, totalPages: 5, total: 45, limit: 10 }
+    getGroupedLocations: builder.query({
+      query: ({ page = 1, limit = 10, search = "" } = {}) =>
+        `/locations/grouped?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`,
+      providesTags: [{ type: "Locations", id: "LIST" }],
+    }),
+
+    // ✅ create location (your backend now creates for ALL warehouses by default)
     addLocation: builder.mutation({
       query: (body) => ({ url: "/locations", method: "POST", body }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
+
+    // ✅ NEW: Import locations from Excel (multipart/form-data)
+    // Send FormData with key "file"
+    importLocationsExcel: builder.mutation({
+      query: (formData) => ({
+        url: "/locations/import",
+        method: "POST",
+        body: formData,
+      }),
+      invalidatesTags: [{ type: "Locations", id: "LIST" }],
+    }),
+
+    // update single by id (optional keep)
     updateLocationById: builder.mutation({
       query: ({ id, ...body }) => ({ url: `/locations/${id}`, method: "PUT", body }),
       invalidatesTags: (r, e, { id }) => [{ type: "Locations", id }, { type: "Locations", id: "LIST" }],
     }),
-    // ✅ keep your existing "Edit All" feature
+
+    // ✅ Edit All by rack name
     updateLocationByName: builder.mutation({
       query: ({ name, ...body }) => ({
         url: `/locations/by-name/${encodeURIComponent(name)}`,
@@ -123,13 +155,19 @@ export const inventoryApi = createApi({
       }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
+
+    // delete single (optional keep)
     deleteLocation: builder.mutation({
       query: (id) => ({ url: `/locations/${id}`, method: "DELETE" }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
-    // ✅ optional: "Delete All" by rack name
+
+    // ✅ Delete All by rack name
     deleteLocationByName: builder.mutation({
-      query: (name) => ({ url: `/locations/by-name/${encodeURIComponent(name)}`, method: "DELETE" }),
+      query: (name) => ({
+        url: `/locations/by-name/${encodeURIComponent(name)}`,
+        method: "DELETE",
+      }),
       invalidatesTags: [{ type: "Locations", id: "LIST" }],
     }),
 
@@ -253,7 +291,9 @@ export const {
   useDeleteWarehouseMutation,
 
   useGetLocationsQuery,
+  useGetGroupedLocationsQuery,
   useAddLocationMutation,
+  useImportLocationsExcelMutation,
   useUpdateLocationByIdMutation,
   useUpdateLocationByNameMutation,
   useDeleteLocationMutation,

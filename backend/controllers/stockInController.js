@@ -6,7 +6,7 @@ import Location from "../models/Location.js";
 import mongoose from "mongoose";
 
 // ✅ helper: normalize
-const norm = (v) => String(v || "").trim().toLowerCase();
+const norm = (v) => String(v || "").trim().replace(/\s+/g, " ").toLowerCase();
 
 // ✅ helper: parse date safely
 const parseDateSafe = (v) => {
@@ -15,7 +15,6 @@ const parseDateSafe = (v) => {
 };
 
 // ✅ CREATE STOCK IN (supports normal form + excel import)
-// ✅ Excel-style report like Items import
 export const createStockIn = async (req, res) => {
   try {
     const { items, date, remarks } = req.body;
@@ -28,7 +27,8 @@ export const createStockIn = async (req, res) => {
     const [allItems, allWarehouses, allLocations] = await Promise.all([
       Item.find({}, "_id name modelNo").lean(),
       Warehouse.find({}, "_id name").lean(),
-      Location.find({}, "_id name").lean(),
+      // ✅ IMPORTANT: include warehouse for correct rack resolve
+      Location.find({}, "_id name warehouse").lean(),
     ]);
 
     // item lookups (name + model)
@@ -39,12 +39,14 @@ export const createStockIn = async (req, res) => {
         .map((i) => [norm(i.modelNo), i._id.toString()])
     );
 
-    const warehouseByName = new Map(
-      allWarehouses.map((w) => [norm(w.name), w._id.toString()])
-    );
+    // warehouse lookup by name
+    const warehouseByName = new Map(allWarehouses.map((w) => [norm(w.name), w._id.toString()]));
 
-    const locationByName = new Map(
-      allLocations.map((l) => [norm(l.name), l._id.toString()])
+    // ✅ rack lookup by (warehouseId + rackName)
+    const locationByWarehouseAndName = new Map(
+      allLocations
+        .filter((l) => l.warehouse)
+        .map((l) => [`${l.warehouse.toString()}|${norm(l.name)}`, l._id.toString()])
     );
 
     const resolveId = (input, map) => {
@@ -59,7 +61,7 @@ export const createStockIn = async (req, res) => {
     let skippedDuplicatesCount = 0;
     let errorCount = 0;
 
-    // ✅ prevent duplicate rows inside same upload (like items)
+    // ✅ prevent duplicate rows inside same upload
     const seen = new Set();
 
     for (let i = 0; i < items.length; i++) {
@@ -81,7 +83,9 @@ export const createStockIn = async (req, res) => {
       if (!itemId && modelInput) itemId = resolveId(modelInput, itemByModel);
       if (!itemId) {
         rowErrors.push(
-          `Item not found. Provide valid Item name/ObjectId (or Model No). Got item="${itemInput || ""}", model="${modelInput || ""}".`
+          `Item not found. Provide valid Item name/ObjectId (or Model No). Got item="${
+            itemInput || ""
+          }", model="${modelInput || ""}".`
         );
       }
 
@@ -93,12 +97,23 @@ export const createStockIn = async (req, res) => {
         );
       }
 
-      // ---- resolve location (optional) ----
-      const locationId = locationInput ? resolveId(locationInput, locationByName) : null;
-      if (locationInput && !locationId) {
-        rowErrors.push(
-          `Rack/Location not found. Provide valid Rack name/ObjectId. Got "${locationInput}".`
-        );
+      // ---- resolve location (optional) ✅ FIXED
+      let locationId = null;
+      if (locationInput) {
+        if (mongoose.Types.ObjectId.isValid(locationInput)) {
+          locationId = String(locationInput);
+        } else if (warehouseId) {
+          const key = `${warehouseId}|${norm(locationInput)}`;
+          locationId = locationByWarehouseAndName.get(key) || null;
+        }
+
+        if (!locationId) {
+          rowErrors.push(
+            `Rack/Location not found in this warehouse. Got rack="${locationInput}" for warehouse="${
+              warehouseInput || ""
+            }".`
+          );
+        }
       }
 
       // ---- qty ----
@@ -110,13 +125,10 @@ export const createStockIn = async (req, res) => {
       // ---- date ----
       const effDate = parseDateSafe(dateRaw || Date.now());
       if (!effDate) {
-        rowErrors.push(
-          `Invalid Date. Use yyyy-mm-dd (recommended). Got "${dateRaw || ""}".`
-        );
+        rowErrors.push(`Invalid Date. Use yyyy-mm-dd (recommended). Got "${dateRaw || ""}".`);
       }
 
       // ---- duplicate check inside same import ----
-      // (same item+warehouse+location+date => duplicate row skipped)
       const dupKey = `${itemId || "x"}|${warehouseId || "x"}|${locationId || "null"}|${
         effDate ? effDate.toISOString().split("T")[0] : "x"
       }|${norm(entryRemarks)}`;
@@ -177,7 +189,7 @@ export const createStockIn = async (req, res) => {
           item: itemId,
           warehouse: warehouseId,
           location: locationId,
-          quantity: Math.abs(qty), // ✅ keep positive for IN
+          quantity: Math.abs(qty),
           action: "IN",
           type: "In",
           remarks: entryRemarks,
@@ -219,7 +231,6 @@ export const createStockIn = async (req, res) => {
       }
     }
 
-    // ✅ if nothing imported
     if (importedCount === 0) {
       return res.status(400).json({
         message: `❌ Import failed. Imported: 0, Duplicates skipped: ${skippedDuplicatesCount}, Errors: ${errorCount}`,

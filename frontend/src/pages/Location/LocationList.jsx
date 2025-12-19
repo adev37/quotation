@@ -1,94 +1,52 @@
 // src/pages/Location/LocationList.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
 import {
-  useGetLocationsQuery,
+  useGetGroupedLocationsQuery,
   useUpdateLocationByNameMutation,
-  useDeleteLocationMutation,
+  useDeleteLocationByNameMutation,
+  useImportLocationsExcelMutation,
 } from "../../services/inventoryApi";
 
 const ITEMS_PER_PAGE = 10;
 
 const LocationList = () => {
-  const { data: locations = [], isLoading, refetch } = useGetLocationsQuery();
-  const [updateByName, { isLoading: isUpdating }] =
-    useUpdateLocationByNameMutation();
-  const [deleteLocation] = useDeleteLocationMutation();
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
 
-  const [groupedLocations, setGroupedLocations] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const { data, isLoading, refetch } = useGetGroupedLocationsQuery({
+    page,
+    limit: ITEMS_PER_PAGE,
+    search,
+  });
+
+  const groupedLocations = data?.data || [];
+  const meta = data?.meta || { totalPages: 1 };
+
+  const [updateByName, { isLoading: isUpdating }] = useUpdateLocationByNameMutation();
+  const [deleteByName, { isLoading: isDeleting }] = useDeleteLocationByNameMutation();
+  const [importExcel, { isLoading: isImporting }] = useImportLocationsExcelMutation();
+
   const [editingName, setEditingName] = useState(null);
   const [editData, setEditData] = useState({ newName: "", description: "" });
 
-  // group locations by rack name whenever data changes
-  useEffect(() => {
-    const groupByRackName = (data) => {
-      const map = new Map();
-      (data || []).forEach((loc) => {
-        const key = (loc.name || "").trim().toLowerCase();
-        const whName =
-          typeof loc.warehouse === "object"
-            ? loc.warehouse?.name || "—"
-            : "—";
-        if (!map.has(key)) {
-          map.set(key, {
-            _id: loc._id, // just for keying
-            name: loc.name,
-            description: loc.description,
-            warehouses: [whName],
-          });
-        } else {
-          map.get(key).warehouses.push(whName);
-        }
-      });
-      return Array.from(map.values());
-    };
+  const [file, setFile] = useState(null);
 
-    setGroupedLocations(groupByRackName(locations));
-    setCurrentPage(1);
-  }, [locations]);
-
-  const totalPages = useMemo(
-    () => Math.ceil(groupedLocations.length / ITEMS_PER_PAGE) || 1,
-    [groupedLocations.length]
-  );
-
-  const paginatedLocations = useMemo(
-    () =>
-      groupedLocations.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-      ),
-    [groupedLocations, currentPage]
-  );
+  const totalPages = useMemo(() => meta.totalPages || 1, [meta.totalPages]);
 
   const handleDeleteAllByName = async (name) => {
-    const confirm = window.confirm(
-      `Delete ALL entries for "${name}" rack?`
-    );
+    const confirm = window.confirm(`Delete ALL entries for "${name}" rack?`);
     if (!confirm) return;
 
-    // delete all location documents that match this rack name
     try {
-      const toDelete = (locations || []).filter(
-        (loc) => loc.name.trim().toLowerCase() === name.trim().toLowerCase()
-      );
-
-      if (toDelete.length === 0) {
-        toast.info("Nothing to delete.");
-        return;
-      }
-
-      await Promise.all(
-        toDelete.map((loc) => deleteLocation(loc._id).unwrap())
-      );
-
-      toast.success(`🗑️ Deleted ${toDelete.length} entries of "${name}" rack`);
+      await deleteByName(name).unwrap();
+      toast.success(`🗑️ Deleted "${name}" from all warehouses`);
+      setEditingName(null);
       refetch();
     } catch (err) {
-      toast.error("❌ Failed to delete rack group.");
-      // eslint-disable-next-line no-console
+      toast.error(err?.data?.message || "❌ Failed to delete rack group.");
       console.error("Delete error:", err);
     }
   };
@@ -106,13 +64,30 @@ const LocationList = () => {
         newName: editData.newName,
         description: editData.description,
       }).unwrap();
+
       toast.success("✅ Rack group updated successfully.");
       setEditingName(null);
       refetch();
     } catch (err) {
-      toast.error("❌ Failed to update rack group.");
-      // eslint-disable-next-line no-console
+      toast.error(err?.data?.message || "❌ Failed to update rack group.");
       console.error("Update error:", err);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!file) return toast.error("Please select an Excel file");
+
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const res = await importExcel(fd).unwrap();
+      toast.success(res?.message || "✅ Imported!");
+      setFile(null);
+      refetch();
+    } catch (err) {
+      toast.error(err?.data?.message || "❌ Excel import failed");
+      console.error("Import error:", err);
     }
   };
 
@@ -122,6 +97,43 @@ const LocationList = () => {
       <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
         🗃️ Location (Rack) List
       </h2>
+
+      {/* Top Bar: Search + Import */}
+      <div className="bg-white shadow rounded p-4 mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+        <div className="flex gap-2 w-full md:w-1/2">
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search rack name..."
+            className="w-full border rounded px-3 py-2"
+          />
+          <button
+            onClick={() => refetch()}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded"
+          >
+            🔄
+          </button>
+        </div>
+
+        <div className="flex gap-2 w-full md:w-auto items-center">
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="border rounded px-3 py-2 w-full md:w-72"
+          />
+          <button
+            onClick={handleImport}
+            disabled={isImporting}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-60"
+          >
+            {isImporting ? "Importing..." : "⬆️ Import Excel"}
+          </button>
+        </div>
+      </div>
 
       {isLoading ? (
         <p className="text-blue-500">Loading locations...</p>
@@ -141,10 +153,10 @@ const LocationList = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedLocations.map((loc, idx) => (
-                  <tr key={loc.name} className="border-t hover:bg-gray-50">
+                {groupedLocations.map((loc, idx) => (
+                  <tr key={loc._id || loc.name} className="border-t hover:bg-gray-50">
                     <td className="p-2 border">
-                      {(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
+                      {(page - 1) * ITEMS_PER_PAGE + idx + 1}
                     </td>
 
                     {editingName === loc.name ? (
@@ -154,30 +166,27 @@ const LocationList = () => {
                             name="newName"
                             value={editData.newName}
                             onChange={(e) =>
-                              setEditData((s) => ({
-                                ...s,
-                                newName: e.target.value,
-                              }))
+                              setEditData((s) => ({ ...s, newName: e.target.value }))
                             }
                             className="w-full border rounded px-2 py-1"
                           />
                         </td>
+
                         <td className="p-2 border text-sm text-gray-700">
-                          {loc.warehouses.join(", ")}
+                          {(loc.warehouses || []).join(", ")}
                         </td>
+
                         <td className="p-2 border">
                           <input
                             name="description"
                             value={editData.description}
                             onChange={(e) =>
-                              setEditData((s) => ({
-                                ...s,
-                                description: e.target.value,
-                              }))
+                              setEditData((s) => ({ ...s, description: e.target.value }))
                             }
                             className="w-full border rounded px-2 py-1"
                           />
                         </td>
+
                         <td className="p-2 border flex gap-2">
                           <button
                             onClick={handleUpdate}
@@ -198,11 +207,9 @@ const LocationList = () => {
                       <>
                         <td className="p-2 border">{loc.name}</td>
                         <td className="p-2 border text-sm text-gray-700">
-                          {loc.warehouses.join(", ")}
+                          {(loc.warehouses || []).join(", ")}
                         </td>
-                        <td className="p-2 border">
-                          {loc.description || "—"}
-                        </td>
+                        <td className="p-2 border">{loc.description || "—"}</td>
                         <td className="p-2 border flex gap-2">
                           <button
                             onClick={() => handleEditClick(loc)}
@@ -212,7 +219,8 @@ const LocationList = () => {
                           </button>
                           <button
                             onClick={() => handleDeleteAllByName(loc.name)}
-                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+                            disabled={isDeleting}
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded disabled:opacity-60"
                           >
                             🗑 Delete All
                           </button>
@@ -225,21 +233,21 @@ const LocationList = () => {
             </table>
           </div>
 
-          {/* Pagination Controls */}
+          {/* Pagination */}
           <div className="flex justify-between items-center mt-4">
             <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((prev) => prev - 1)}
+              disabled={page === 1}
+              onClick={() => setPage((prev) => prev - 1)}
               className="px-4 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50"
             >
               ⬅️ Previous
             </button>
             <span className="text-sm">
-              Page {currentPage} of {totalPages}
+              Page {page} of {totalPages}
             </span>
             <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((prev) => prev + 1)}
+              disabled={page === totalPages}
+              onClick={() => setPage((prev) => prev + 1)}
               className="px-4 py-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-50"
             >
               Next ➡️

@@ -1,18 +1,13 @@
 import React, { useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import {
-  useGetWarehousesQuery,
-  useAddLocationMutation,
-} from "../../services/inventoryApi";
+import { useAddLocationMutation } from "../../services/inventoryApi";
 
 const AddLocation = () => {
-  const { data: warehouses = [] } = useGetWarehousesQuery();
   const [addLocation, { isLoading }] = useAddLocationMutation();
 
   const [form, setForm] = useState({
     name: "",
-    warehouse: "ALL", // ✅ default All
     description: "",
   });
 
@@ -27,12 +22,11 @@ const AddLocation = () => {
     try {
       await addLocation({
         name: form.name.trim(),
-        warehouse: form.warehouse, // ✅ "ALL" or warehouseId
         description: form.description,
       }).unwrap();
 
-      toast.success("✅ Location added!");
-      setForm({ name: "", warehouse: "ALL", description: "" });
+      toast.success("✅ Rack added in ALL warehouses!");
+      setForm({ name: "", description: "" });
     } catch (err) {
       toast.error(err?.data?.message || "❌ Failed to add location");
     }
@@ -41,9 +35,14 @@ const AddLocation = () => {
   return (
     <div className="p-6">
       <ToastContainer position="top-right" autoClose={3000} />
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">🗂️ Add Rack Location</h2>
+      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+        🗂️ Add Rack Location
+      </h2>
 
-      <form onSubmit={handleSubmit} className="bg-white shadow-md p-6 rounded-lg max-w-3xl">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white shadow-md p-6 rounded-lg max-w-3xl"
+      >
         <div className="mb-4">
           <label className="block mb-1 font-medium">Location Name</label>
           <input
@@ -54,25 +53,8 @@ const AddLocation = () => {
             placeholder="e.g., Rack No-5"
             required
           />
-        </div>
-
-        <div className="mb-4">
-          <label className="block mb-1 font-medium">Warehouse</label>
-          <select
-            name="warehouse"
-            value={form.warehouse}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
-          >
-            <option value="ALL">All Warehouses</option>
-            {warehouses.map((w) => (
-              <option key={w._id} value={w._id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
           <p className="text-sm text-gray-500 mt-1">
-            If you choose “All Warehouses”, same rack will be created for every warehouse.
+            This rack will be created automatically in <b>all warehouses</b>.
           </p>
         </div>
 

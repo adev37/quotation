@@ -6,7 +6,6 @@ import {
 } from "../../services/inventoryApi";
 
 const StockInReport = () => {
-  // RTK Query data
   const { data: stockIns = [], isLoading } = useListStockInQuery();
   const { data: warehouses = [] } = useGetWarehousesQuery();
   const { data: locations = [] } = useGetLocationsQuery();
@@ -16,7 +15,7 @@ const StockInReport = () => {
 
   const [searchText, setSearchText] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState(""); // ✅ now stores rack NAME
   const [companyFilter, setCompanyFilter] = useState("");
   const [minQty, setMinQty] = useState("");
   const [maxQty, setMaxQty] = useState("");
@@ -24,33 +23,31 @@ const StockInReport = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 11;
 
-  // hydrate when server data changes
   useEffect(() => {
     const data = Array.isArray(stockIns) ? stockIns : [];
     setEntries(data);
     setFiltered(data);
   }, [stockIns]);
 
-  // unique companies (from items in stock-in entries)
   const companies = useMemo(
     () =>
       Array.from(
-        new Set(
-          (entries || [])
-            .map((e) => e.item?.companyName)
-            .filter(Boolean)
-        )
+        new Set((entries || []).map((e) => e.item?.companyName).filter(Boolean))
       ),
     [entries]
   );
 
-  // unique rack locations by name (like your previous logic)
-  const uniqueRackLocations = useMemo(
-    () => [...new Map((locations || []).map((l) => [l.name, l])).values()],
-    [locations]
-  );
+  // ✅ unique rack names (case-insensitive), sorted
+  const uniqueRackNames = useMemo(() => {
+    const map = new Map();
+    (locations || []).forEach((l) => {
+      const key = String(l.name || "").trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) map.set(key, String(l.name || "").trim());
+    });
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [locations]);
 
-  // apply filters
   useEffect(() => {
     let data = [...entries];
     const q = (searchText || "").toLowerCase();
@@ -67,8 +64,10 @@ const StockInReport = () => {
       data = data.filter((e) => e.warehouse?._id === warehouseFilter);
     }
 
+    // ✅ filter by rack NAME (works across all warehouses)
     if (locationFilter) {
-      data = data.filter((e) => e.location?._id === locationFilter);
+      const wanted = locationFilter.trim().toLowerCase();
+      data = data.filter((e) => (e.location?.name || "").trim().toLowerCase() === wanted);
     }
 
     if (companyFilter) {
@@ -95,7 +94,6 @@ const StockInReport = () => {
     maxQty,
   ]);
 
-  // pagination
   const indexOfLast = currentPage * itemsPerPage;
   const indexOfFirst = indexOfLast - itemsPerPage;
   const currentItems = filtered.slice(indexOfFirst, indexOfLast);
@@ -105,7 +103,6 @@ const StockInReport = () => {
     <div className="p-6 min-h-screen flex flex-col">
       <h2 className="text-2xl font-bold mb-4">📥 Stock In Report</h2>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-4 mb-4">
         <input
           type="text"
@@ -128,15 +125,16 @@ const StockInReport = () => {
           ))}
         </select>
 
+        {/* ✅ Rack filter by NAME */}
         <select
           value={locationFilter}
           onChange={(e) => setLocationFilter(e.target.value)}
           className="border px-3 py-2 rounded w-60"
         >
           <option value="">📦 All Racks</option>
-          {uniqueRackLocations.map((l) => (
-            <option key={l._id} value={l._id}>
-              {l.name}
+          {uniqueRackNames.map((name) => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </select>
@@ -171,7 +169,6 @@ const StockInReport = () => {
         />
       </div>
 
-      {/* Table */}
       <div className="overflow-auto bg-white rounded shadow flex-1">
         {isLoading ? (
           <p className="p-6 text-blue-600">Loading Stock In...</p>
@@ -197,27 +194,17 @@ const StockInReport = () => {
                     {indexOfFirst + idx + 1}
                   </td>
                   <td className="p-2 border whitespace-nowrap">{e.item?.name}</td>
-                  <td className="p-2 border whitespace-nowrap">
-                    {e.item?.modelNo}
-                  </td>
+                  <td className="p-2 border whitespace-nowrap">{e.item?.modelNo}</td>
                   <td className="p-2 border whitespace-nowrap">
                     {e.item?.companyName || "—"}
                   </td>
-                  <td className="p-2 border whitespace-nowrap">
-                    {e.warehouse?.name}
-                  </td>
-                  <td className="p-2 border whitespace-nowrap">
-                    {e.location?.name || "—"}
-                  </td>
+                  <td className="p-2 border whitespace-nowrap">{e.warehouse?.name}</td>
+                  <td className="p-2 border whitespace-nowrap">{e.location?.name || "—"}</td>
                   <td className="p-2 border whitespace-nowrap">{e.quantity}</td>
                   <td className="p-2 border whitespace-nowrap">
-                    {e.date
-                      ? new Date(e.date).toLocaleDateString("en-GB")
-                      : "—"}
+                    {e.date ? new Date(e.date).toLocaleDateString("en-GB") : "—"}
                   </td>
-                  <td className="p-2 border whitespace-nowrap">
-                    {e.remarks || "—"}
-                  </td>
+                  <td className="p-2 border whitespace-nowrap">{e.remarks || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -225,7 +212,6 @@ const StockInReport = () => {
         )}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-4 flex justify-center gap-2">
           <button
@@ -239,6 +225,7 @@ const StockInReport = () => {
           >
             ◀️ Prev
           </button>
+
           {Array.from({ length: totalPages }, (_, i) => (
             <button
               key={i}
@@ -252,10 +239,9 @@ const StockInReport = () => {
               {i + 1}
             </button>
           ))}
+
           <button
-            onClick={() =>
-              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-            }
+            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
             disabled={currentPage === totalPages}
             className={`px-3 py-1 rounded ${
               currentPage === totalPages
