@@ -161,14 +161,6 @@ const Dashboard = () => {
                 Inventory Dashboard
               </h1>
 
-              <p className="text-sm sm:text-base text-gray-600">
-                Welcome{" "}
-                <span className="font-semibold text-gray-800">
-                  {user?.name || "Guest"}
-                </span>{" "}
-                
-              </p>
-
               {backgroundFetching && (
                 <p className="text-xs text-blue-600 mt-1">Refreshing data…</p>
               )}
