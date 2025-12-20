@@ -348,9 +348,7 @@ const LocationList = () => {
               </div>
             )}
 
-            <p className="mt-3 text-xs text-slate-500">
-              Mobile tip: Swipe the table left/right. Buttons auto-wrap.
-            </p>
+           
           </div>
         </div>
       </div>

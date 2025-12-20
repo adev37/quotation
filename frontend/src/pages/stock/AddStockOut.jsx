@@ -1,5 +1,5 @@
 // src/pages/stock/AddStockOut.jsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import {
@@ -17,11 +17,13 @@ const AddStockOut = () => {
   const [createStockOut, { isLoading }] = useCreateStockOutMutation();
   const [triggerRackOptions] = useLazyGetRackOptionsQuery();
 
-  const allItems = Array.isArray(itemsResult)
-    ? itemsResult
-    : Array.isArray(itemsResult?.items)
-    ? itemsResult.items
-    : [];
+  const allItems = useMemo(() => {
+    return Array.isArray(itemsResult)
+      ? itemsResult
+      : Array.isArray(itemsResult?.items)
+      ? itemsResult.items
+      : [];
+  }, [itemsResult]);
 
   const [rows, setRows] = useState([emptyRow]);
 
@@ -29,8 +31,6 @@ const AddStockOut = () => {
   const [itemSearch, setItemSearch] = useState([""]);
   const [itemSuggestions, setItemSuggestions] = useState([[]]);
   const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(null);
-
-  const suggestionWrapRef = useRef(null);
 
   // rack options per row: { [idx]: [{locationId, location, quantity}] }
   const [rackOptions, setRackOptions] = useState({});
@@ -41,13 +41,13 @@ const AddStockOut = () => {
   const [date, setDate] = useState("");
   const [returnDate, setReturnDate] = useState("");
 
+  const suggestionWrapRef = useRef(null);
+
   // close suggestions when click outside
   useEffect(() => {
     const onDown = (e) => {
       if (!suggestionWrapRef.current) return;
-      if (!suggestionWrapRef.current.contains(e.target)) {
-        setActiveSuggestionIdx(null);
-      }
+      if (!suggestionWrapRef.current.contains(e.target)) setActiveSuggestionIdx(null);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -164,6 +164,19 @@ const AddStockOut = () => {
     if (activeSuggestionIdx === idx) setActiveSuggestionIdx(null);
   };
 
+  const hasValidRows = useMemo(() => {
+    return rows.some(
+      (r) => r.item && r.warehouse && r.location && Number(r.quantity) > 0
+    );
+  }, [rows]);
+
+  const isReady = useMemo(() => {
+    if (!hasValidRows) return false;
+    if (!purpose || !date || !reason) return false;
+    if (purpose === "Demo" && !returnDate) return false;
+    return true;
+  }, [hasValidRows, purpose, date, reason, returnDate]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -172,13 +185,13 @@ const AddStockOut = () => {
       if (!r.item) return toast.error(`Row ${i + 1}: Select item`);
       if (!r.warehouse) return toast.error(`Row ${i + 1}: Select warehouse`);
       if (!r.location) return toast.error(`Row ${i + 1}: Select rack/location`);
-      if (!r.quantity || Number(r.quantity) <= 0) return toast.error(`Row ${i + 1}: Enter valid quantity`);
+      if (!r.quantity || Number(r.quantity) <= 0)
+        return toast.error(`Row ${i + 1}: Enter valid quantity`);
     }
 
     if (!purpose) return toast.error("Select purpose");
     if (!date) return toast.error("Select stock out date");
     if (!reason) return toast.error("Enter reason");
-
     if (purpose === "Demo" && !returnDate) return toast.error("Select expected return date");
 
     try {
@@ -197,6 +210,7 @@ const AddStockOut = () => {
       }).unwrap();
 
       toast.success("✅ Stock Out saved");
+
       setRows([emptyRow]);
       setItemSearch([""]);
       setItemSuggestions([[]]);
@@ -215,31 +229,56 @@ const AddStockOut = () => {
 
   return (
     <div className="w-full">
-      <ToastContainer position="top-right" autoClose={4000} theme="colored" />
+      <ToastContainer position="top-right" autoClose={4000} />
 
-      <div className="p-3 sm:p-4 md:p-6">
-        <div className="mx-auto w-full max-w-[1100px]">
-          <div className="bg-white rounded-2xl border shadow-sm p-4 sm:p-6">
-            <div className="mb-4">
-              <h2 className="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2">
-                📤 Stock Out
-              </h2>
-              <p className="text-sm text-slate-500">
-                Select rack based on available stock. On mobile, fields stack automatically.
-              </p>
+      <div className="mx-auto w-full max-w-[1100px]">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          {/* Header */}
+          <div className="px-4 py-4 sm:px-6 sm:py-5 bg-gradient-to-r from-rose-50 via-white to-white border-b border-slate-200">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-sm">
+                    📤
+                  </span>
+                  Stock Out
+                </h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Select rack based on available stock.
+                </p>
+              </div>
+
+              <span
+                className={[
+                  "shrink-0 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold border",
+                  isReady
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    : "bg-slate-50 text-slate-600 border-slate-200",
+                ].join(" ")}
+              >
+                {isReady ? "Ready" : "Incomplete"}
+              </span>
             </div>
+          </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4" ref={suggestionWrapRef}>
+          <form onSubmit={handleSubmit} className="px-4 py-4 sm:px-6 sm:py-6" ref={suggestionWrapRef}>
+            <div className="space-y-4">
               {rows.map((r, idx) => (
-                <div key={idx} className="rounded-xl border p-3 sm:p-4 bg-slate-50/40">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-sm font-semibold text-slate-800">Item Row #{idx + 1}</div>
+                <div
+                  key={idx}
+                  className="rounded-2xl border border-slate-200 bg-slate-50/40 p-3 sm:p-4"
+                >
+                  {/* Row header */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="text-sm font-semibold text-slate-800">
+                      Item Row #{idx + 1}
+                    </div>
 
                     {rows.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeRow(idx)}
-                        className="text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg"
+                        className="inline-flex items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
                       >
                         Remove
                       </button>
@@ -249,196 +288,200 @@ const AddStockOut = () => {
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                     {/* Search Item */}
                     <div className="md:col-span-5 relative min-w-0">
-                      <label className="block mb-1 text-sm font-medium text-slate-700">
-                        Search Item <span className="text-rose-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={itemSearch[idx] || ""}
-                        onChange={(e) => handleItemSearchChange(idx, e.target.value)}
-                        onFocus={() => (itemSearch[idx] || "").trim() && setActiveSuggestionIdx(idx)}
-                        placeholder="Type item name / model"
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                        autoComplete="off"
-                        required
-                      />
+                      <Field label="Search Item" required hint="Type item name or model number">
+                        <TextInput
+                          value={itemSearch[idx] || ""}
+                          onChange={(e) => handleItemSearchChange(idx, e.target.value)}
+                          onFocus={() =>
+                            (itemSearch[idx] || "").trim() && setActiveSuggestionIdx(idx)
+                          }
+                          placeholder="Search item..."
+                          autoComplete="off"
+                          required
+                        />
+                      </Field>
 
                       {activeSuggestionIdx === idx && (itemSuggestions[idx] || []).length > 0 && (
-                        <ul className="absolute z-20 mt-1 bg-white border rounded-xl shadow w-full max-h-56 overflow-auto">
-                          {itemSuggestions[idx].map((s) => (
-                            <li
-                              key={s._id}
-                              className="px-3 py-2 cursor-pointer hover:bg-indigo-50 text-sm"
-                              onClick={() => handleSelectSuggestion(idx, s)}
-                            >
-                              <div className="font-medium text-slate-900">{s.name}</div>
-                              <div className="text-xs text-slate-500">{s.modelNo || "-"}</div>
-                            </li>
-                          ))}
-                        </ul>
+                        <div className="absolute z-30 mt-2 w-full">
+                          <div className="rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                            <div className="max-h-64 overflow-auto">
+                              <ul className="divide-y divide-slate-100">
+                                {itemSuggestions[idx].map((s) => (
+                                  <li
+                                    key={s._id}
+                                    className="px-3 py-2 cursor-pointer hover:bg-rose-50"
+                                    onClick={() => handleSelectSuggestion(idx, s)}
+                                  >
+                                    <div className="text-sm font-semibold text-slate-900">
+                                      {s.name}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                      {s.modelNo || "-"}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeSuggestionIdx === idx && (itemSuggestions[idx] || []).length === 0 && (itemSearch[idx] || "").trim() && (
+                        <div className="absolute z-30 mt-2 w-full">
+                          <div className="rounded-2xl border border-slate-200 bg-white shadow-lg p-3 text-sm text-slate-500">
+                            No items found.
+                          </div>
+                        </div>
                       )}
                     </div>
 
                     {/* Warehouse */}
                     <div className="md:col-span-3 min-w-0">
-                      <label className="block mb-1 text-sm font-medium text-slate-700">
-                        Warehouse <span className="text-rose-600">*</span>
-                      </label>
-                      <select
-                        value={r.warehouse}
-                        onChange={(e) => handleWarehouseChange(idx, e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                        required
-                      >
-                        <option value="">Select Warehouse</option>
-                        {(allWarehouses || []).map((w) => (
-                          <option key={w._id} value={w._id}>
-                            {w.name}
-                          </option>
-                        ))}
-                      </select>
+                      <Field label="Warehouse" required hint="Select warehouse">
+                        <Select
+                          value={r.warehouse}
+                          onChange={(e) => handleWarehouseChange(idx, e.target.value)}
+                          required
+                        >
+                          <option value="">Select Warehouse</option>
+                          {(allWarehouses || []).map((w) => (
+                            <option key={w._id} value={w._id}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
                     </div>
 
                     {/* Rack */}
                     <div className="md:col-span-3 min-w-0">
-                      <label className="block mb-1 text-sm font-medium text-slate-700">
-                        Rack <span className="text-rose-600">*</span>
-                      </label>
-                      <select
-                        value={r.location}
-                        onChange={(e) => handleRackChange(idx, e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                        required
-                        disabled={!r.item || !r.warehouse}
-                      >
-                        <option value="">
-                          {!r.item || !r.warehouse ? "Select Item + Warehouse first" : "Select Rack"}
-                        </option>
-
-                        {(rackOptions[idx] || []).map((loc) => (
-                          <option key={loc.locationId} value={loc.locationId}>
-                            {loc.location} (Available: {loc.quantity})
+                      <Field label="Rack / Location" required hint="Shows only racks with stock">
+                        <Select
+                          value={r.location}
+                          onChange={(e) => handleRackChange(idx, e.target.value)}
+                          required
+                          disabled={!r.item || !r.warehouse}
+                        >
+                          <option value="">
+                            {!r.item || !r.warehouse
+                              ? "Select Item + Warehouse first"
+                              : "Select Rack"}
                           </option>
-                        ))}
-                      </select>
+
+                          {(rackOptions[idx] || []).map((loc) => (
+                            <option key={loc.locationId} value={loc.locationId}>
+                              {loc.location} (Available: {loc.quantity})
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
                     </div>
 
                     {/* Qty */}
                     <div className="md:col-span-1 min-w-0">
-                      <label className="block mb-1 text-sm font-medium text-slate-700">
-                        Qty <span className="text-rose-600">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={r.quantity}
-                        onChange={(e) => handleQtyChange(idx, e.target.value)}
-                        className="w-full border rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                        required
-                      />
+                      <Field label="Qty" hint="Required" required>
+                        <TextInput
+                          type="number"
+                          min={1}
+                          value={r.quantity}
+                          onChange={(e) => handleQtyChange(idx, e.target.value)}
+                          required
+                          className="text-center"
+                          placeholder="0"
+                        />
+                      </Field>
                     </div>
                   </div>
                 </div>
               ))}
+            </div>
 
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={addRow}
-                  className="inline-flex items-center justify-center rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2"
-                >
-                  + Add Another Item
-                </button>
-              </div>
+            {/* Add row */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={addRow}
+                className="inline-flex items-center justify-center rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
+              >
+                + Add Another Item
+              </button>
+            </div>
 
-              {/* Purpose + Dates */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block mb-1 text-sm font-medium text-slate-700">
-                    Purpose <span className="text-rose-600">*</span>
-                  </label>
-                  <select
-                    value={purpose}
-                    onChange={(e) => setPurpose(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    required
-                  >
-                    <option value="">Select Purpose</option>
-                    <option value="Sale">Sale</option>
-                    <option value="Demo">Demo</option>
-                  </select>
-                </div>
+            {/* Purpose + Dates */}
+            <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field label="Purpose" required>
+                <Select value={purpose} onChange={(e) => setPurpose(e.target.value)} required>
+                  <option value="">Select Purpose</option>
+                  <option value="Sale">Sale</option>
+                  <option value="Demo">Demo</option>
+                </Select>
+              </Field>
 
-                <div>
-                  <label className="block mb-1 text-sm font-medium text-slate-700">
-                    Stock Out Date <span className="text-rose-600">*</span>
-                  </label>
-                  <input
+              <Field label="Stock Out Date" required>
+                <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              </Field>
+
+              {purpose === "Demo" ? (
+                <Field label="Expected Return Date" required>
+                  <TextInput
                     type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    value={returnDate}
+                    onChange={(e) => setReturnDate(e.target.value)}
                     required
                   />
-                </div>
+                </Field>
+              ) : (
+                <div className="hidden md:block" />
+              )}
+            </div>
 
-                {purpose === "Demo" ? (
-                  <div>
-                    <label className="block mb-1 text-sm font-medium text-slate-700">
-                      Expected Return Date <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={returnDate}
-                      onChange={(e) => setReturnDate(e.target.value)}
-                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                      required
-                    />
-                  </div>
-                ) : (
-                  <div className="hidden md:block" />
-                )}
-              </div>
+            {/* Reason + Tender */}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="Reason / Remarks" hint="Required" required>
+                <TextInput value={reason} onChange={(e) => setReason(e.target.value)} required />
+              </Field>
 
-              {/* Reason + Tender */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block mb-1 text-sm font-medium text-slate-700">
-                    Reason <span className="text-rose-600">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                    required
-                  />
-                </div>
+              <Field label="Tender No." hint="Optional">
+                <TextInput value={tenderNo} onChange={(e) => setTenderNo(e.target.value)} />
+              </Field>
+            </div>
 
-                <div>
-                  <label className="block mb-1 text-sm font-medium text-slate-700">
-                    Tender No. <span className="text-slate-400">(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={tenderNo}
-                    onChange={(e) => setTenderNo(e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                  />
-                </div>
-              </div>
+            {/* Actions */}
+            <div className="mt-5 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setRows([emptyRow]);
+                  setItemSearch([""]);
+                  setItemSuggestions([[]]);
+                  setRackOptions({});
+                  setActiveSuggestionIdx(null);
+                  setPurpose("");
+                  setReason("");
+                  setTenderNo("");
+                  setDate("");
+                  setReturnDate("");
+                }}
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                disabled={isLoading}
+              >
+                Reset
+              </button>
 
               <button
                 type="submit"
-                disabled={isLoading}
-                className={`w-full rounded-lg py-2.5 text-sm font-semibold text-white transition ${
-                  isLoading ? "bg-slate-400 cursor-wait" : "bg-rose-600 hover:bg-rose-700"
-                }`}
+                disabled={isLoading || !isReady}
+                className={[
+                  "inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm",
+                  isLoading || !isReady
+                    ? "bg-slate-400 cursor-not-allowed"
+                    : "bg-rose-600 hover:bg-rose-700",
+                ].join(" ")}
               >
                 {isLoading ? "Saving..." : "Save Stock Out"}
               </button>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -446,3 +489,45 @@ const AddStockOut = () => {
 };
 
 export default AddStockOut;
+
+/* ---------- Small UI helpers (same style you used in StockIn) ---------- */
+function Field({ label, hint, required, children }) {
+  return (
+    <div className="min-w-0">
+      <label className="block text-xs sm:text-sm font-semibold text-slate-800">
+        {label} {required ? <span className="text-rose-600">*</span> : null}
+      </label>
+      {hint ? <p className="text-xs text-slate-500 mt-1">{hint}</p> : null}
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function TextInput({ className = "", ...props }) {
+  return (
+    <input
+      className={[
+        "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm",
+        "placeholder:text-slate-400",
+        "focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500",
+        className,
+      ].join(" ")}
+      {...props}
+    />
+  );
+}
+
+function Select({ className = "", children, ...props }) {
+  return (
+    <select
+      className={[
+        "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm",
+        "focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500",
+        className,
+      ].join(" ")}
+      {...props}
+    >
+      {children}
+    </select>
+  );
+}

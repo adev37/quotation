@@ -166,9 +166,7 @@ const Dashboard = () => {
                 <span className="font-semibold text-gray-800">
                   {user?.name || "Guest"}
                 </span>{" "}
-                <span className="text-xs sm:text-sm text-gray-500">
-                  ({user?.role || "Viewer"})
-                </span>
+                
               </p>
 
               {backgroundFetching && (
@@ -384,3 +382,4 @@ const MiniBarRow = ({ title, meta, value, max }) => {
     </div>
   );
 };
+  
